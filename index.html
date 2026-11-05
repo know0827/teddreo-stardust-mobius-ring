@@ -481,17 +481,42 @@ function ensureLogoLoaded(){
   });
 }
 
+/* 扭結設計:單扭結(扭轉半圈,莫比烏斯)、雙扭結(正面兩道扭結,各扭半圈,共扭一整圈) */
+const KINKS = [
+  {key:1, name:'單扭結', sub:'Single Twist', desc:'戒身在正面扭轉半圈後首尾相接,形成一道流暢的斜向扭結。'},
+  {key:2, name:'雙扭結', sub:'Double Twist', desc:'戒身在正面連續扭轉兩次,形成兩道並列的斜向扭結,線條更具律動感。'}
+];
+/* 目前 3D 使用的扭結數,於重建戒指時依 state.kink 更新 */
+let MOBIUS_KINKS = 1;
+const MOBIUS_KINK_CENTERS_DOUBLE = [0.448, 0.552]; /* 雙扭結中心(以繞圈比例表示,約 161 度與 199 度,正面並列) */
+/* 扭轉角(弧度):單扭結 0→π,雙扭結 0→2π;S 為扭結集中係數 */
+function mobiusKinkHalf(t, S){
+  const g = (c)=>{ const f = x=> 1/(1+Math.exp(-S*(x-c))); return (f(t)-f(0))/(f(1)-f(0)); };
+  if(MOBIUS_KINKS===2){ S = 38; /* 每道扭結接近單扭結的長度,略收一點讓兩道靠近時仍分得出來 */ return (g(MOBIUS_KINK_CENTERS_DOUBLE[0]) + g(MOBIUS_KINK_CENTERS_DOUBLE[1]))*Math.PI; }
+  return g(0.5)*Math.PI;
+}
+/* 扭結附近保持乾淨用:回傳最近一道扭結的中心角度(弧度) */
+function mobiusKinkThetas(){ return MOBIUS_KINKS===2 ? MOBIUS_KINK_CENTERS_DOUBLE.map(c=>c*Math.PI*2) : [Math.PI]; }
+
+/* 碎星圈:兩側厚度面是否鋪滿碎星 */
+const STARDUSTS = [
+  {key:true, name:'加碎星圈', sub:'With Stardust', desc:'兩側厚度面鋪滿細碎閃亮的碎星,扭轉處形成一道斜向流動的碎星光帶。'},
+  {key:false, name:'不加碎星圈', sub:'Plain Edge', desc:'兩側厚度面與戒身同樣為亮面,線條簡潔俐落。'}
+];
 const SHAPES = [
-  {key:'mobius', name:'莫比烏斯', sub:'Möbius', desc:'方正切面的戒身扭轉半圈後首尾相接,兩側邊緣為細緻噴砂霧面,扭轉處形成一道斜向流動的霧面光帶,象徵無盡與永恆的連結。'}
+  {key:'mobius', name:'平邊', sub:'Flat Edge', desc:'方正切面的戒身扭轉半圈後首尾相接,兩側邊緣為細緻噴砂霧面,扭轉處形成一道斜向流動的霧面光帶,象徵無盡與永恆的連結。'},
+  {key:'mobiusDeco', name:'花邊', sub:'Textured Edge', desc:'與平邊相同的方正扭轉戒身與碎星側邊,上下邊緣再加上手工敲打的不規則起伏,呈現更具手作溫度的造型。'}
 ];
 const WIDTHS = [2, 2.5, 3, 3.5, 4];
 /* 莫比烏斯系列需要足夠寬度才能呈現自然的扭轉弧度,僅開放 3mm、4mm */
 const SHAPE_ALLOWED_WIDTHS = {
-  mobius: [4]
+  mobius: [3, 4],
+  mobiusDeco: [3, 4]
 };
 /* 寬度條顯示選項 */
 const SHAPE_WIDTH_OPTIONS = {
-  mobius: [4]
+  mobius: [3, 4],
+  mobiusDeco: [3, 4]
 };
 
 /* 鋯石顏色由使用者提供的參考圖(全白背景12色寶石)實際像素取樣、並校正陰影後得出 */
@@ -680,7 +705,7 @@ function startLineLogin(){
 /* =========================================================== */
 
 let state = {
-  shape:'mobius', previewShape:null, width:4,
+  kink:1, stardust:true, shape:'mobius', previewShape:null, width:4,
   gemColor:'diamondwhite', gemChosen:false, gemEmbed:true,
   finish:'polish',
   engraveInnerOn:false, engraveInnerText:'',
@@ -689,7 +714,7 @@ let state = {
   engraveInnerColor:'silver', engraveOuterColor:'silver', engraveSideColor:'silver',
   engraveInnerFont:'specialelite', engraveOuterFont:'notoserif', engraveSideFont:'notoserif',
   ringSize:'', customerName:'', customerPhone:'',
-  openSection:'engrave', revealedStep:0
+  openSection:'kink', revealedStep:0
 };
 
 /* ---------- 價格計算 ---------- */
@@ -995,16 +1020,75 @@ function animate(){
 }
 
 /* ---- 依形狀產生真實剖面(x=厚度/徑向, y=寬度/沿手指軸向), 皆為 1:1 mm ---- */
+/* 花邊(方正扭轉戒身):只在上下邊緣做手工敲打的不規則起伏,圈身另有極輕微的起伏與敲打折面;
+   扭結處(180 度)與主石處(0 度)保持乾淨 */
+function decoQuiet(theta, c, flat, ramp){
+  const d = Math.abs(((theta - c) % (Math.PI*2) + Math.PI*3) % (Math.PI*2) - Math.PI);
+  const t = Math.min(1, Math.max(0, (d - flat)/ramp));
+  return t*t*(3 - 2*t);
+}
 function decoWaveOffset(theta){
-  /* 多組不同頻率與相位疊加,避免規律的正弦波感,呈現更自然的手工敲打起伏 */
-  return 0.22*Math.sin(theta*5 + 0.4)
-       + 0.13*Math.sin(theta*8 + 2.1)
-       + 0.09*Math.sin(theta*13 + 1.2);
+  return 0.03*Math.sin(9*theta + 1.1) + 0.016*Math.sin(16*theta + 0.4);
 }
 function decoWaveWidthOffset(theta){
-  return 0.16*Math.cos(theta*5 + 1.1)
-       + 0.10*Math.cos(theta*8 + 0.3)
-       + 0.06*Math.cos(theta*13 + 2.4);
+  return 0.065*Math.sin(5*theta + 0.4) + 0.04*Math.sin(8*theta + 2.0);
+}
+/* 敲打面造成的細微扭轉(折面反光) */
+function decoKinkQuiet(theta, flat, ramp){
+  return mobiusKinkThetas().reduce((f,c)=>f*decoQuiet(theta, c, flat, ramp), 1);
+}
+function decoHammerTwist(theta){
+  return decoKinkQuiet(theta, 0.35, 0.3)*decoQuiet(theta, 0, 0.12, 0.2)
+       *(0.042*Math.sin(7*theta + 0.5) + 0.026*Math.sin(11*theta + 1.9));
+}
+/* 上下緣各自的不規則敲打起伏:以週期 4π 的同一條函式表示,上緣取 E(θ)、下緣取 E(θ+2π),
+   莫比烏斯扭轉半圈後上下緣互換時剛好接續,收尾處不會裂開 */
+function decoEdgeNoise(phi){
+  /* 柔和版:整體幅度約為原本的 75%,高頻細碎起伏再多降一些,邊緣更圓順 */
+  if(MOBIUS_KINKS===2){
+    /* 雙扭結共扭一整圈,上下緣不互換,改用週期 2π 的函式(上緣 phi、下緣 phi+2π 用不同相位) */
+    const th = ((phi % (Math.PI*4)) + Math.PI*4) % (Math.PI*4), lower = th >= Math.PI*2, x = lower ? th - Math.PI*2 : th;
+    const p = lower ? 1.3 : 0;
+    return decoKinkQuiet(x, 0.3, 0.35)*(0.1*Math.sin(4*x + 0.3 + p) + 0.07*Math.sin(7*x + 1.7 + p)
+         + 0.03*Math.sin(12*x + 0.9 + p) + 0.018*Math.sin(18*x + 2.2 + p));
+  }
+  return decoKinkQuiet(phi, 0.3, 0.35)*(0.1*Math.sin(4.5*phi + 0.3) + 0.07*Math.sin(7.5*phi + 1.7)
+       + 0.03*Math.sin(12.5*phi + 0.9) + 0.018*Math.sin(18.5*phi + 2.2));
+}
+/* 花邊外側圓潤:朝外的那一面(扭轉前 s>0 的面在扭結前朝外、扭結後轉成朝內,另一面相反)
+   中間微微隆起成弧面,朝內的那面維持平整;權重隨扭轉角平滑過渡,收尾處兩面剛好接續 */
+const DECO_TWIST_S = 30; /* 花邊扭結集中係數:與平邊相同(放鬆一點,原 40) */
+const DECO_SIDE_DOME_RATIO = 0.35; /* 側邊(厚度面)向外隆起高度 = 戒身厚度一半 × 此比例 */
+const DECO_DOME_RATIO = 0.4;
+/* 花邊側邊圓潤:兩側厚度面中間向外微微隆起 */
+function decoSideDomeV(v, s, halfThick){
+  const u = Math.min(1, Math.abs(s)/halfThick);
+  const k = (MOBIUS_KINKS===2) ? 0.55 : DECO_SIDE_DOME_RATIO; /* 雙扭結側邊更圓潤 */
+  return v + Math.sign(v)*halfThick*k*(1 - u*u);
+} /* 隆起高度 = 戒身厚度一半 × 此比例 */
+function decoDomeS(t, v, s, halfWidth, halfThick, S){
+  const half = mobiusKinkHalf(t, S);
+  const w = s>0 ? (1+Math.cos(half))/2 : (1-Math.cos(half))/2;
+  const u = Math.min(1, Math.abs(v)/halfWidth);
+  return s + Math.sign(s)*halfThick*DECO_DOME_RATIO*w*(1 - u*u);
+}
+/* 方正莫比烏斯戒身上的點:theta 為繞圈角、t 為 theta/2π、(v,s) 為剖面局部座標(寬度、厚度),
+   halfWidth 為剖面半寬;deco=true 時加上花邊的敲打邊緣、細微扭轉與起伏。
+   幾何、側邊碎星、寶石都用這同一個函式,確保彼此完全貼合 */
+function mobiusSquarePoint(t, v, s, halfWidth, S, deco){
+  const theta = Math.PI*2*t;
+  let half = mobiusKinkHalf(t, S);
+  let rw = 0, zw = 0;
+  if(deco){
+    half = -half - decoHammerTwist(theta); /* 花邊扭結扭向另外一邊 */
+    const e = v>0 ? decoEdgeNoise(theta) : decoEdgeNoise(theta + Math.PI*2);
+    v += Math.sign(v)*e*Math.min(1, Math.abs(v)/halfWidth);
+    rw = decoWaveOffset(theta); zw = decoWaveWidthOffset(theta);
+  }
+  const ch = Math.cos(half), sh = Math.sin(half);
+  const rv = v*ch - s*sh, rs = v*sh + s*ch;
+  const radial = MAIN_RADIUS_MM + rs + rw;
+  return {x: radial*Math.cos(theta), y: radial*Math.sin(theta), z: rv + zw, half};
 }
 
 function getProfilePoints(shapeKey, halfWidth, halfThick){
@@ -1145,7 +1229,7 @@ function buildMobiusBandGeometry(mainRadius, profilePts, withWave, twistSharpnes
 /* 新款莫比烏斯:方正(矩形)剖面扭轉半圈。每個面各自獨立建立頂點,讓稜角分明;
    寬面(內外兩面,扭轉後相連成同一面)為材質 0 = 選擇的表面工藝,
    窄面(兩側邊緣,扭轉後相連成同一面)為材質 1 = 噴砂霧面,扭轉處自然形成斜向霧面光帶。 */
-function buildMobiusFacetedGeometry(mainRadius, halfWidth, halfThick, twistSharpness){
+function buildMobiusFacetedGeometry(mainRadius, halfWidth, halfThick, twistSharpness, deco){
   const Useg = 600;
   const S = twistSharpness || 40;
   const sig = x=> 1/(1+Math.exp(-S*(x-0.5)));
@@ -1156,24 +1240,26 @@ function buildMobiusFacetedGeometry(mainRadius, halfWidth, halfThick, twistSharp
   [0,2,1,3].forEach((k, oi)=>{
     const p0 = prof[k], p1 = prof[(k+1)%4];
     const start = indices.length;
+    /* 花邊的寬面(內外兩面)細分成多段,才能做出圓潤的弧面 */
+    const M = deco ? (oi<2 ? 16 : 10) : (oi<2 ? 1 : 10), cols = M+1; /* 側邊細分,做出圓潤弧面(平邊、花邊都有) */
     for(let ui=0; ui<=Useg; ui++){
       const t = ui/Useg;
-      const theta = Math.PI*2*t;
-      const half = ((sig(t)-sig0)/(sig1-sig0))*Math.PI;
-      const cu=Math.cos(theta), su=Math.sin(theta), ch=Math.cos(half), sh=Math.sin(half);
-      [p0,p1].forEach((p,j)=>{
-        const rv = p.v*ch - p.s*sh;
-        const rs = p.v*sh + p.s*ch;
-        const radial = mainRadius + rs;
-        positions.push(radial*cu, radial*su, rv);
-        uvs.push(t*44, j);
-      });
+      for(let j=0;j<=M;j++){
+        const f = j/M;
+        let v = p0.v + (p1.v-p0.v)*f;
+        let sv = p0.s + (p1.s-p0.s)*f;
+        if(deco && oi<2) sv = decoDomeS(t, v, sv, halfWidth, halfThick, S);
+        if(oi>=2) v = decoSideDomeV(v, sv, halfThick); /* 平邊、花邊的側邊都圓潤 */
+        const q = mobiusSquarePoint(t, v, sv, halfWidth, S, deco);
+        positions.push(q.x, q.y, q.z);
+        uvs.push(t*44, f);
+      }
     }
-    for(let ui=0; ui<Useg; ui++){
-      const a = base+ui*2, b=a+1, c=a+3, d=a+2;
+    for(let ui=0; ui<Useg; ui++) for(let j=0;j<M;j++){
+      const a = base+ui*cols+j, b=a+1, c=a+cols+1, d=a+cols;
       indices.push(a,b,c, a,c,d);
     }
-    base += (Useg+1)*2;
+    base += (Useg+1)*cols;
     groups.push([start, indices.length-start, oi<2?0:1]);
   });
   const geo = new THREE.BufferGeometry();
@@ -1217,8 +1303,8 @@ function buildFrostedEdgeMaterial(){
 
 /* 碎星:沿著莫比烏斯兩側厚度面(含扭轉處轉到正面的斜向光帶)灑上立體小亮點,
    扭轉公式與 buildMobiusFacetedGeometry 完全相同,亮點會緊貼在霧面上、隨角度閃爍 */
-function addMobiusEdgeSparkles(halfWidth, halfThick){
-  const S = 40;
+function addMobiusEdgeSparkles(halfWidth, halfThick, deco){
+  const S = deco ? DECO_TWIST_S : 30;
   const sig = x=> 1/(1+Math.exp(-S*(x-0.5)));
   const sig0 = sig(0), sig1 = sig(1);
   const count = 12000;
@@ -1233,17 +1319,13 @@ function addMobiusEdgeSparkles(halfWidth, halfThick){
   const dummy = new THREE.Object3D();
   for(let i=0;i<count*2;i++){
     const t = Math.random();
-    const theta = Math.PI*2*t;
-    const half = ((sig(t)-sig0)/(sig1-sig0))*Math.PI;
-    const cu=Math.cos(theta), su=Math.sin(theta), ch=Math.cos(half), sh=Math.sin(half);
     const side = Math.random()<0.5 ? 1 : -1;
     const v = side*(halfWidth + r*0.25);
     const sLoc = (Math.random()*2-1)*halfThick*0.92;
-    const rv = v*ch - sLoc*sh, rs = v*sh + sLoc*ch;
-    const radial = MAIN_RADIUS_MM + rs;
+    const q = mobiusSquarePoint(t, decoSideDomeV(v, sLoc, halfThick), sLoc, halfWidth, S, deco);
     const which = Math.random()<0.55 ? 0 : 1;
     if(counters[which]>=count) continue;
-    dummy.position.set(radial*cu, radial*su, rv);
+    dummy.position.set(q.x, q.y, q.z);
     const sc = 0.9 + Math.random()*0.9;
     dummy.scale.set(sc,sc,sc);
     dummy.rotation.set(Math.random()*6.28, Math.random()*6.28, Math.random()*6.28);
@@ -1279,10 +1361,11 @@ function buildGlitterEdgeMaterial(baseMat){
 
 function buildRingGeometry(shapeKey, halfWidth, halfThick, mainRadius){
   if(shapeKey==='mobius'){
-    return buildMobiusFacetedGeometry(mainRadius, halfWidth, halfThick, 40);
+    return buildMobiusFacetedGeometry(mainRadius, halfWidth, halfThick, 30); /* 扭結放鬆一點(原 40) */
   }
   if(shapeKey==='mobiusDeco'){
-    return buildMobiusBandGeometry(mainRadius, mobiusEllipseProfile(halfWidth, halfThick, 28), true);
+    /* 花邊:與平邊相同的方正扭轉戒身,再加上手工敲打的不規則邊緣 */
+    return buildMobiusFacetedGeometry(mainRadius, halfWidth, halfThick, DECO_TWIST_S, true);
   }
   if(shapeKey==='mobiusFlat'){
     return buildMobiusBandGeometry(mainRadius, mobiusFlatProfile(halfWidth, halfThick), false, 40); /* 扭結放鬆一點,範圍比另外兩款寬一些,矩形剖面在較緩的扭轉下線條更自然 */
@@ -1408,7 +1491,8 @@ function buildStarsColorMap(){
 
 function materialForFinish(type){
   let params;
-  if(type==='polish' || type==='polishStars') params = {color:0xeef0f1, metalness:1.0, roughness:0.08};
+  /* 亮面:顏色再偏白一點,並加一層很淡的白色自發光,讓陰影處不會發灰,整體呈現更亮的白銀色 */
+  if(type==='polish' || type==='polishStars') params = {color:0xf3f5f6, metalness:1.0, roughness:0.08, emissive:0xffffff, emissiveIntensity:0.04};
   else if(type==='matte' || type==='matteStars') params = {color:0xb7baba, metalness:0.82, roughness:0.68};
   else if(type==='brushline') params = {color:0xc1c4c4, metalness:0.85, roughness:0.26};
   else if(type==='brushcoarse') params = {color:0xe2e4e5, metalness:0.9, roughness:0.48};
@@ -1635,14 +1719,15 @@ function _rebuildRingNow(){
   const visualHalfWidth = halfWidth * widthVisualScale * mobiusFlatExtraScale;
   let halfThick = DEFAULT_HALF_THICK;
   if(viewShape==='plain') halfThick = Math.max(halfThick, visualHalfWidth*0.9);
-  if(viewShape==='mobius') halfThick = visualHalfWidth*0.42; /* 依實拍比例:4mm 寬、約 1.6~1.8mm 厚的方正戒身 */
+  if(viewShape==='mobius' || viewShape==='mobiusDeco') halfThick = visualHalfWidth*0.42; /* 依實拍比例:4mm 寬、約 1.6~1.8mm 厚的方正戒身 */
 
+  MOBIUS_KINKS = (state.kink===2) ? 2 : 1;
   const geo = buildRingGeometry(viewShape, visualHalfWidth, halfThick, MAIN_RADIUS_MM);
   const mat = materialForFinish(state.finish);
 
-  bandMesh = (viewShape==='mobius') ? new THREE.Mesh(geo, [mat, buildGlitterEdgeMaterial(mat)]) : new THREE.Mesh(geo, mat);
+  bandMesh = (viewShape==='mobius' || viewShape==='mobiusDeco') ? new THREE.Mesh(geo, [mat, state.stardust ? buildGlitterEdgeMaterial(mat) : mat]) : new THREE.Mesh(geo, mat); /* 不加碎星圈:側邊用與戒身相同的亮面 */
   ringGroup.add(bandMesh);
-  if(viewShape==='mobius') addMobiusEdgeSparkles(visualHalfWidth, halfThick);
+  if((viewShape==='mobius' || viewShape==='mobiusDeco') && state.stardust) addMobiusEdgeSparkles(visualHalfWidth, halfThick, viewShape==='mobiusDeco');
 
   /* 主寶石:直接使用您提供的平面寶石照片貼在戒指上;花邊形狀因表面有波浪起伏,
      需額外加上該角度的波浪偏移量,寶石才不會被埋在凸起的表面之下而「消失」。
@@ -1676,6 +1761,12 @@ function _rebuildRingNow(){
     /* 寶石朝向:讓其法線方向對齊該角度上實際扭轉後的表面法線(ch*cu, ch*su, -sh),
        圓形寶石本身左右對稱,只需要對齊法線方向即可,不需要額外處理繞法線軸的旋轉 */
     const targetNormal = new THREE.Vector3(ch*cu, ch*su, -sh).normalize();
+    if(viewShape==='mobiusDeco'){
+      /* 花邊:位置與朝向改用與戒身幾何相同的公式計算 */
+      const q = mobiusSquarePoint(gemTheta/(Math.PI*2), 0, decoDomeS(gemTheta/(Math.PI*2), 0, sOffset, visualHalfWidth, halfThick, DECO_TWIST_S), visualHalfWidth, DECO_TWIST_S, true);
+      gem.position.set(q.x, q.y, q.z);
+      targetNormal.set(Math.cos(q.half)*cu, Math.cos(q.half)*su, -Math.sin(q.half)).normalize();
+    }
     gem.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1), targetNormal);
     gem.renderOrder = 1;
     ringGroup.add(gem);
@@ -1791,15 +1882,19 @@ function engravePreviewSVG(){
 
 /* ---------- Accordion 各段落內容 ---------- */
 const SECTIONS = [
-  {id:'engrave', num:'01', title:'刻字設計', summary:()=>{
+  {id:'kink', num:'01', title:'扭結設計', summary:()=>KINKS.find(k=>k.key===state.kink).name},
+  {id:'width', num:'02', title:'戒指寬度', summary:()=>state.width+'mm'},
+  {id:'shape', num:'03', title:'戒指形狀', summary:()=>SHAPES.find(s=>s.key===state.shape).name},
+  {id:'stardust', num:'04', title:'碎星圈', summary:()=>STARDUSTS.find(x=>x.key===state.stardust).name},
+  {id:'engrave', num:'05', title:'刻字設計', summary:()=>{
     const parts = [];
     if(state.engraveInnerOn) parts.push(`內「${state.engraveInnerText||'未填寫'}」`);
     if(state.engraveOuterOn) parts.push(`外「${state.engraveOuterText||'未填寫'}」`);
     if(state.engraveSideOn) parts.push(`側「${state.engraveSideText||'未填寫'}」`);
     return parts.length ? parts.join('・') : '不刻字';
   }},
-  {id:'ringsize', num:'02', title:'戒指尺寸', summary:()=> state.ringSize ? `${state.ringSize} 號` : '尚未填寫'},
-  {id:'confirm', num:'03', title:'確認訂製資訊', summary:()=>'查看完整摘要'}
+  {id:'ringsize', num:'06', title:'戒指尺寸', summary:()=> state.ringSize ? `${state.ringSize} 號` : '尚未填寫'},
+  {id:'confirm', num:'07', title:'確認訂製資訊', summary:()=>'查看完整摘要'}
 ];
 
 function engraveSummaryText(){
@@ -1810,7 +1905,47 @@ function engraveSummaryText(){
   return parts.length ? parts.join('、') : '(不刻字)';
 }
 
+function kinkIconSVG(n){
+  /* 扭結示意:橢圓戒圈正面畫出一道或兩道斜向扭結線 */
+  const ink = '#2a2723';
+  const curve = (x0,x1)=>`<path d="M ${x0} 33 C ${x0+(x1-x0)*0.35} 22, ${x0+(x1-x0)*0.65} 44, ${x1} 33" fill="none" stroke="${ink}" stroke-width="1.3" stroke-linecap="round"/>`;
+  return `<svg width="100" height="72" viewBox="0 0 100 72" style="display:block;margin:0 auto 10px;background:#f6f1e7;border-radius:8px;">
+    <ellipse cx="50" cy="34" rx="37" ry="20" fill="none" stroke="${ink}" stroke-width="1.3"/>
+    <ellipse cx="50" cy="34" rx="27" ry="13" fill="none" stroke="${ink}" stroke-width="0.9" opacity="0.6"/>
+    ${n===2 ? curve(24,46)+curve(54,76) : curve(34,66)}
+  </svg>`;
+}
+function stardustIconSVG(on){
+  const ink = '#2a2723';
+  let dots = '';
+  if(on){ for(let i=0;i<46;i++){ const a = i/46*Math.PI*2; const r = 1 + (i%3)*0.15; dots += `<circle cx="${(50+37*Math.cos(a)).toFixed(1)}" cy="${(34+20*Math.sin(a)).toFixed(1)}" r="${r}" fill="#b49a63"/>`; } }
+  return `<svg width="100" height="72" viewBox="0 0 100 72" style="display:block;margin:0 auto 10px;background:#f6f1e7;border-radius:8px;">
+    <ellipse cx="50" cy="34" rx="37" ry="20" fill="none" stroke="${ink}" stroke-width="1.3"/>
+    <ellipse cx="50" cy="34" rx="27" ry="13" fill="none" stroke="${ink}" stroke-width="0.9" opacity="0.6"/>
+    ${dots}
+  </svg>`;
+}
 function sectionBody(id){
+  if(id==='stardust'){
+    return `<div class="opt-grid">${STARDUSTS.map(x=>`
+      <div class="opt-card ${state.stardust===x.key?'selected':''}" tabindex="0" role="button" aria-label="${x.name}"
+           onclick="setStardust(${x.key})" onkeydown="if(event.key==='Enter'){setStardust(${x.key})}">
+        ${stardustIconSVG(x.key)}
+        <p class="opt-name">${x.name}</p>
+        <p class="opt-sub">${x.sub}</p>
+        <p class="opt-desc">${x.desc}</p>
+      </div>`).join('')}</div>`;
+  }
+  if(id==='kink'){
+    return `<div class="opt-grid">${KINKS.map(k=>`
+      <div class="opt-card ${state.kink===k.key?'selected':''}" tabindex="0" role="button" aria-label="${k.name}"
+           onclick="setKink(${k.key})" onkeydown="if(event.key==='Enter'){setKink(${k.key})}">
+        ${kinkIconSVG(k.key)}
+        <p class="opt-name">${k.name}</p>
+        <p class="opt-sub">${k.sub}</p>
+        <p class="opt-desc">${k.desc}</p>
+      </div>`).join('')}</div>`;
+  }
   if(id==='shape'){
     return `<div class="opt-grid">${SHAPES.map(s=>`
       <div class="opt-card ${state.shape===s.key?'selected':''} ${s.disabled?'disabled':''}" tabindex="0" role="button"
@@ -1839,8 +1974,7 @@ function sectionBody(id){
     }).join('')}</div>
       <p class="opt-desc" style="text-align:center;margin-top:8px;">上方色條已用瀏覽器實體單位(mm)繪製,理論上等於實際大小<br>3D預覽及寬度條皆僅供參考，實際以成品為準</p>
       ${widthOptions.some(mm=>!allowedWidths.includes(mm)) ? `<p class="opt-desc" style="text-align:center;margin-top:6px;color:var(--ink-faint);">灰色為此形狀無法施作之寬度</p>` : ''}
-      <p class="opt-desc" style="text-align:center;margin-top:6px;color:var(--gold);">此款戒指寬度統一為 4mm</p>
-      <div class="next-step-row"><button class="next-step" onclick="setWidth(4)">下一步:表面工藝</button></div>`;
+      <div class="next-step-row"><button class="next-step" onclick="goNext('width')">下一步:戒指形狀</button></div>`;
   }
   if(id==='finish'){
     return `<div class="opt-grid">${FINISHES.map(f=>{
@@ -1927,6 +2061,8 @@ function sectionBody(id){
     return `
       <div class="card">
         <h3>訂單資訊</h3>
+        <div class="order-row"><span class="l">碎星圈</span><span class="v">${STARDUSTS.find(x=>x.key===state.stardust).name}</span></div>
+        <div class="order-row"><span class="l">扭結設計</span><span class="v">${KINKS.find(k=>k.key===state.kink).name}</span></div>
         <div class="order-row"><span class="l">形狀 / 寬度</span><span class="v">${shapeInfo.name}・${state.width}mm</span></div>
         <div class="order-row"><span class="l">表面工藝</span><span class="v">${finishInfo.name}</span></div>
         <div class="order-row"><span class="l">刻字</span><span class="v">${engraveSummaryText()}</span></div>
@@ -2009,6 +2145,14 @@ function goNext(fromId){ advanceStep(fromId); refreshAll(); }
 /* ---------- 事件處理 ---------- */
 function refreshAll(){ rebuildRing(); renderAccordion(); }
 
+function setStardust(on){
+  state.stardust = !!on;
+  advanceStep('stardust'); refreshAll();
+}
+function setKink(n){
+  state.kink = (n===2) ? 2 : 1;
+  advanceStep('kink'); refreshAll();
+}
 function setShape(key){
   const s = SHAPES.find(x=>x.key===key);
   if(s && s.disabled) return;
@@ -2078,6 +2222,8 @@ function buildOrderText(){
   const finishInfo = FINISHES.find(f=>f.key===state.finish);
   return [
     `【${BRAND_NAME} 訂購資訊】`,
+    `扭結設計:${KINKS.find(k=>k.key===state.kink).name}`,
+    `碎星圈:${STARDUSTS.find(x=>x.key===state.stardust).name}`,
     `戒指形狀:${shapeInfo.name}`,
     `戒指寬度:${state.width}mm`,
     `表面工藝:${finishInfo.name}`,
@@ -2137,6 +2283,8 @@ function buildOrderCanvas(){
   ctx.fillText(new Date().toLocaleString('zh-TW'), W-80, 236);
 
   const rows = [
+    ['扭結設計', KINKS.find(k=>k.key===state.kink).name],
+    ['碎星圈', STARDUSTS.find(x=>x.key===state.stardust).name],
     ['戒指形狀', shapeInfo.name],
     ['戒指寬度', state.width+'mm'],
     ['表面工藝', finishInfo.name],
@@ -2238,6 +2386,8 @@ function buildDesignPhotoCanvas(){
   const topPad = 46;
   const titleBlockH = 46;
   const orderRows = [
+    ['扭結設計', KINKS.find(k=>k.key===state.kink).name],
+    ['碎星圈', STARDUSTS.find(x=>x.key===state.stardust).name],
     ['戒指形狀', shapeInfo.name],
     ['戒指寬度', state.width+'mm'],
     ['表面工藝', finishInfo.name],
@@ -2569,9 +2719,9 @@ function submitOrLoginThenSend(){
 
 function restartAll(){
   state = {
-    shape:'mobius', previewShape:null, width:4, gemColor:'diamondwhite', gemChosen:false, gemEmbed:true,
+    kink:1, stardust:true, shape:'mobius', previewShape:null, width:4, gemColor:'diamondwhite', gemChosen:false, gemEmbed:true,
     finish:'polish', engraveInnerOn:false, engraveInnerText:'', engraveOuterOn:false, engraveOuterText:'', engraveSideOn:false, engraveSideText:'', engraveInnerColor:'silver', engraveOuterColor:'silver', engraveSideColor:'silver', engraveInnerFont:'specialelite', engraveOuterFont:'notoserif', engraveSideFont:'notoserif',
-    ringSize:'', customerName:'', customerPhone:'', openSection:'engrave', revealedStep:0
+    ringSize:'', customerName:'', customerPhone:'', openSection:'kink', revealedStep:0
   };
   refreshAll();
   window.scrollTo({top:0, behavior:'smooth'});
@@ -2592,6 +2742,8 @@ initThree();
     if(!SECTIONS.find(x=>x.id===state.openSection)) state.openSection = 'engrave';
     state.revealedStep = Math.min(state.revealedStep, SECTIONS.length-1);
     if(!SHAPES.find(s=>s.key===state.shape)) state.shape = 'mobius';
+    if(state.kink!==1 && state.kink!==2) state.kink = 1;
+    if(typeof state.stardust!=='boolean') state.stardust = true;
     if(!(SHAPE_ALLOWED_WIDTHS[state.shape]||WIDTHS).includes(state.width)) state.width = 4;
     storeDel('teddreo_design_backup');
   }
